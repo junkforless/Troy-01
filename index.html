@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ESP Live Dashboard</title>
+<style>
+body { font-family: Arial, sans-serif; margin:0; padding:10px; background:#f2f2f2; transition: background 0.5s; }
+.device-header { font-size:20px; margin-top:20px; margin-bottom:5px; text-align:center; }
+.sensor-card { 
+    background:#fff; border-radius:12px; padding:15px; margin-bottom:15px; 
+    box-shadow:0 2px 6px rgba(0,0,0,0.2); display:flex; flex-direction:column; transition: background 0.3s;
+}
+.sensor-top { display:flex; justify-content: space-between; align-items: center; }
+.sensor-name-container { display:flex; align-items:center; }
+.sensor-name { font-size:18px; font-weight:bold; }
+.sensor-value-container { display:flex; align-items:center; justify-content:flex-end; }
+.sensor-value { font-size:32px; font-weight:bold; font-family: monospace; min-width:70px; text-align:right; transition: color 0.3s, text-decoration 0.3s;}
+.lastReported { text-align:center; font-size:16px; margin-bottom:5px; }
+.staleWarning { text-align:center; color:red; font-weight:bold; display:none; margin-bottom:10px; }
+</style>
+<!-- MQTT.js library -->
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<script>
+// ====== CONFIG ======
+const DEVICE_LIST = ["Troy-01"];
+const FRIENDLY_NAMES = {
+  "Troy-01": {
+    "s1":"Boiler Temp",
+    "s2":"Return Line",
+    "s3":"Ambient",
+    "s4":"Tank Temp"
+  }
+};
+
+const MQTT_BROKER = "wss://e6a8e480573c4e6f9923fb4cbca3ea53.s1.eu.hivemq.cloud:8884/mqtt";
+const MQTT_USER = "troy-esp";
+const MQTT_PASSWORD = "T7v$9pXq!2rL8bZm";
+const MQTT_TOPIC = "home/temps/Troy-01";
+
+// ====== GLOBALS ======
+let lastTimestamps = {};
+let mqttClient;
+
+// ====== BUILD UI ======
+function buildSensors(){
+    const container = document.getElementById('sensorsContainer');
+    DEVICE_LIST.forEach(dev=>{
+        const header = document.createElement('div');
+        header.className = 'device-header';
+        header.innerText = dev;
+        container.appendChild(header);
+
+        const lastReported = document.createElement('div');
+        lastReported.className = 'lastReported';
+        lastReported.id = `lastReported_${dev}`;
+        lastReported.innerText = '--';
+        container.appendChild(lastReported);
+
+        const staleWarning = document.createElement('div');
+        staleWarning.className = 'staleWarning';
+        staleWarning.id = `staleWarning_${dev}`;
+        staleWarning.innerText = '⚠ Data is stale!';
+        container.appendChild(staleWarning);
+
+        Object.keys(FRIENDLY_NAMES[dev]).forEach(s=>{
+            const card = document.createElement('div');
+            card.className = 'sensor-card';
+            card.innerHTML = `
+                <div class="sensor-top">
+                    <div class="sensor-name-container">
+                        <div class="sensor-name">${FRIENDLY_NAMES[dev][s]}</div>
+                    </div>
+                    <div class="sensor-value-container">
+                        <span class="sensor-value" id="${dev}_value_${s}">--°F</span>
+                    </div>
+                </div>`;
+            container.appendChild(card);
+        });
+
+        lastTimestamps[dev] = 0;
+    });
+}
+
+// ====== UPDATE STALE DATA ======
+function updateSecondsAgo(){
+    const now = Date.now()/1000;
+    DEVICE_LIST.forEach(dev=>{
+        const ts = lastTimestamps[dev];
+        const seconds = ts>0 ? Math.floor(now - ts) : '--';
+
+        const formattedDate = ts>0 ? new Date(ts*1000).toLocaleString('en-US', {
+            month:'2-digit', day:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit'
+        }) : '--';
+        const secsText = (seconds==='--') ? '-- secs ago' : `${seconds} secs ago`;
+        document.getElementById(`lastReported_${dev}`).innerText = `${formattedDate} — ${secsText}`;
+
+        const warningEl = document.getElementById(`staleWarning_${dev}`);
+        const isStale = (seconds==='--' || seconds>60);
+        warningEl.style.display = isStale ? 'block' : 'none';
+
+        Object.keys(FRIENDLY_NAMES[dev]).forEach(s=>{
+            const valEl = document.getElementById(`${dev}_value_${s}`);
+            const card = valEl.closest('.sensor-card');
+            if(isStale){
+                card.style.backgroundColor = '#ffe6e6';
+                valEl.style.textDecoration = 'line-through';
+                valEl.style.color = 'gray';
+            } else {
+                card.style.backgroundColor = '#fff';
+                valEl.style.textDecoration = 'none';
+                valEl.style.color = 'black';
+            }
+        });
+    });
+}
+
+// ====== HANDLE MQTT MESSAGE ======
+function handleMessage(topic, message){
+    try {
+        const payload = JSON.parse(message.toString());
+        // Expecting your ESP payload: {"s1":23.4,"s2":23.5,"s3":22.9,"s4":23.1,"epoch":1736621000}
+        const dev = "Troy-01";
+        if(payload.epoch) lastTimestamps[dev] = payload.epoch;
+
+        Object.keys(FRIENDLY_NAMES[dev]).forEach((s, i)=>{
+            const val = parseFloat(payload[s]);
+            const el = document.getElementById(`${dev}_value_${s}`);
+            if(el && !isNaN(val)) el.innerText = Math.round(val)+'°F';
+        });
+    } catch(e){ console.error("Error parsing MQTT message", e);}
+}
+
+// ====== CONNECT TO MQTT ======
+function connectMQTT(){
+    mqttClient = mqtt.connect(MQTT_BROKER, {
+        username: MQTT_USER,
+        password: MQTT_PASSWORD,
+        reconnectPeriod: 5000
+    });
+
+    mqttClient.on('connect', ()=> {
+        console.log('Connected to MQTT broker');
+        mqttClient.subscribe(MQTT_TOPIC, (err)=> {
+            if(err) console.error('Subscribe error', err);
+        });
+    });
+
+    mqttClient.on('message', handleMessage);
+
+    mqttClient.on('error', (err)=>{
+        console.error('MQTT error', err);
+        mqttClient.end();
+        setTimeout(connectMQTT, 5000);
+    });
+
+    mqttClient.on('close', ()=> {
+        console.log('MQTT connection closed, retrying...');
+    });
+}
+
+// ====== INIT ======
+document.addEventListener('DOMContentLoaded', ()=>{
+    buildSensors();
+    connectMQTT();
+    setInterval(updateSecondsAgo, 1000);
+});
+</script>
+</head>
+<body>
+<div id="sensorsContainer"></div>
+</body>
+</html>
