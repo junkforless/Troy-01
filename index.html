@@ -22,19 +22,22 @@ body { font-family: Arial, sans-serif; padding:15px; background:#f4f4f4; }
 <script>
 window.addEventListener("DOMContentLoaded", () => {
 
+  // Friendly sensor names
   const FRIENDLY = { a:"Boiler", b:"Return", c:"Ambient", d:"Tank" };
 
+  // MQTT settings (read-only)
   const MQTT_URL = "wss://e6a8e480573c4e6f9923fb4cbca3ea53.s1.eu.hivemq.cloud:8884/mqtt";
-  const MQTT_USER = "troy-esp";
-  const MQTT_PASS = "4pp8X6T+jvK36;3EQSk";
+  const MQTT_USER = "troy-esp-read-only";
+  const MQTT_PASS = "4wH8s121f2mV4wH8s";
 
   let lastSeen = {};
   let readings = {};
 
-  // Ensure a device div exists
-  function ensureDevice(dev){
+  // Pre-create a default device box (so the page isn't blank)
+  const DEFAULT_DEVICE = "Troy-ESP-01";
+  function createDeviceBox(dev){
+    const c = document.getElementById("container");
     if(!document.getElementById(`wrap_${dev}`)){
-      const c = document.getElementById("container");
       const wrap = document.createElement("div");
       wrap.id = `wrap_${dev}`;
       wrap.className = "device";
@@ -42,7 +45,7 @@ window.addEventListener("DOMContentLoaded", () => {
         <div class="dev-header">${dev}</div>
         <div id="warn_${dev}" class="warn">⚠ STALE DATA</div>
         <div id="sens_${dev}"></div>
-        <div id="ts_${dev}" class="timestamp"></div>
+        <div id="ts_${dev}" class="timestamp">Waiting for data...</div>
       `;
       c.appendChild(wrap);
       lastSeen[dev] = 0;
@@ -50,6 +53,7 @@ window.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // Update display function
   function updateDisplay(){
     const now = Math.floor(Date.now()/1000);
     for(const dev in readings){
@@ -74,7 +78,11 @@ window.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // Always update display every second
   setInterval(updateDisplay, 1000);
+
+  // Pre-create the default device box
+  createDeviceBox(DEFAULT_DEVICE);
 
   // Connect MQTT
   const client = mqtt.connect(MQTT_URL,{
@@ -100,7 +108,7 @@ window.addEventListener("DOMContentLoaded", () => {
     try{
       const data = JSON.parse(msg.toString());
       const devTopic = topic.split("/").pop(); // e.g., Troy-ESP-01
-      ensureDevice(devTopic);
+      createDeviceBox(devTopic);
 
       readings[devTopic] = data;
       lastSeen[devTopic] = data.ep;
