@@ -26,10 +26,9 @@ canvas { max-width:150px; }
 <script>
 window.addEventListener("DOMContentLoaded", () => {
 
-  // Friendly names per device
   const FRIENDLY = {
     "Troy-ESP-01": { a:"Boiler", b:"Return", c:"Ambient", d:"Tank" },
-    "Troy-ESP-02": { a:"Hot", b:"Cold" }  // only two sensors
+    "Troy-ESP-02": { a:"Hot", b:"Cold" }
   };
 
   const MQTT_URL  = "wss://81367823bf3f495e897a93f0d0bff0ee.s1.eu.hivemq.cloud:8884/mqtt";
@@ -49,7 +48,6 @@ window.addEventListener("DOMContentLoaded", () => {
       wrap.id = `wrap_${dev}`;
       wrap.className = "device";
 
-      // Build gauges for each sensor
       let sensorsHTML = `<div class="sensor-container">`;
       const friendlyForDevice = FRIENDLY[dev] || {};
       for(const k in friendlyForDevice){
@@ -67,12 +65,12 @@ window.addEventListener("DOMContentLoaded", () => {
         <div id="warn_${dev}" class="warn">⚠ STALE DATA</div>
         ${sensorsHTML}
       `;
-
       c.appendChild(wrap);
+
       lastSeen[dev] = 0;
       readings[dev] = {};
 
-      // Initialize gauges
+      // Initialize gauges with instant first value (animationDuration:0)
       for(const k in friendlyForDevice){
         gauges[`${dev}_${k}`] = new RadialGauge({
           renderTo: `gauge_${dev}_${k}`,
@@ -92,7 +90,7 @@ window.addEventListener("DOMContentLoaded", () => {
           borders: true,
           needleType: "arrow",
           needleWidth: 2,
-          animationDuration: 300,
+          animationDuration: 0,   // first value instantly
           animationRule: "linear",
           value: 0
         }).draw();
@@ -109,15 +107,14 @@ window.addEventListener("DOMContentLoaded", () => {
       const res = readings[dev];
       const friendlyForDevice = FRIENDLY[dev] || {};
 
-      // Update gauges
       for(const k in friendlyForDevice){
         const val = res[k];
         if(val != null && !isNaN(val)){
+          gauges[`${dev}_${k}`].animationDuration = 200; // smooth live updates
           gauges[`${dev}_${k}`].value = val;
         }
       }
 
-      // Update timestamp with "xx seconds ago"
       const tsDiv = document.getElementById(`ts_${dev}`);
       if(res.ep){
         const secondsAgo = Math.floor(Date.now()/1000 - res.ep);
@@ -153,6 +150,17 @@ window.addEventListener("DOMContentLoaded", () => {
 
       readings[devTopic] = data;
       lastSeen[devTopic] = data.ep;
+
+      // Immediately update gauges on first message
+      const friendlyForDevice = FRIENDLY[devTopic] || {};
+      for(const k in friendlyForDevice){
+        const val = data[k];
+        if(val != null && !isNaN(val)){
+          gauges[`${devTopic}_${k}`].animationDuration = 0; // first instant
+          gauges[`${devTopic}_${k}`].value = val;
+        }
+      }
+
       updateDisplay();
     }catch(e){
       console.error("Bad JSON", e, msg.toString());
