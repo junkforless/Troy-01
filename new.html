@@ -70,9 +70,9 @@ window.addEventListener("DOMContentLoaded", () => {
       lastSeen[dev] = 0;
       readings[dev] = {};
 
-      // Initialize gauges with instant first value (animationDuration:0)
+      // Initialize gauges AFTER canvas is in DOM
       for(const k in friendlyForDevice){
-        gauges[`${dev}_${k}`] = new RadialGauge({
+        const gauge = new RadialGauge({
           renderTo: `gauge_${dev}_${k}`,
           width: 150,
           height: 150,
@@ -90,10 +90,13 @@ window.addEventListener("DOMContentLoaded", () => {
           borders: true,
           needleType: "arrow",
           needleWidth: 2,
-          animationDuration: 0,   // first value instantly
+          animationDuration: 200,
           animationRule: "linear",
           value: 0
-        }).draw();
+        });
+        gauges[`${dev}_${k}`] = gauge;
+        // ensure gauge is fully drawn before setting first value
+        setTimeout(()=>{ gauge.draw(); }, 50);
       }
     }
   }
@@ -151,13 +154,15 @@ window.addEventListener("DOMContentLoaded", () => {
       readings[devTopic] = data;
       lastSeen[devTopic] = data.ep;
 
-      // Immediately update gauges on first message
       const friendlyForDevice = FRIENDLY[devTopic] || {};
       for(const k in friendlyForDevice){
         const val = data[k];
         if(val != null && !isNaN(val)){
-          gauges[`${devTopic}_${k}`].animationDuration = 0; // first instant
-          gauges[`${devTopic}_${k}`].value = val;
+          // Apply first value after a tiny delay to ensure gauge drawn
+          setTimeout(()=>{
+            gauges[`${devTopic}_${k}`].animationDuration = 0; // instant first value
+            gauges[`${devTopic}_${k}`].value = val;
+          }, 60);
         }
       }
 
