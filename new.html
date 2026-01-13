@@ -39,8 +39,6 @@ window.addEventListener("DOMContentLoaded", () => {
   let readings = {};
   let gauges = {};
 
-  const DEFAULT_DEVICE = "Troy-ESP-01";
-
   function createDeviceBox(dev){
     const c = document.getElementById("container");
     if(!document.getElementById(`wrap_${dev}`)){
@@ -70,9 +68,9 @@ window.addEventListener("DOMContentLoaded", () => {
       lastSeen[dev] = 0;
       readings[dev] = {};
 
-      // Initialize gauges AFTER canvas is in DOM
+      // Initialize gauges with null value
       for(const k in friendlyForDevice){
-        const gauge = new RadialGauge({
+        gauges[`${dev}_${k}`] = new RadialGauge({
           renderTo: `gauge_${dev}_${k}`,
           width: 150,
           height: 150,
@@ -92,11 +90,8 @@ window.addEventListener("DOMContentLoaded", () => {
           needleWidth: 2,
           animationDuration: 200,
           animationRule: "linear",
-          value: 0
-        });
-        gauges[`${dev}_${k}`] = gauge;
-        // ensure gauge is fully drawn before setting first value
-        setTimeout(()=>{ gauge.draw(); }, 50);
+          value: null // important: avoids showing 0 initially
+        }).draw();
       }
     }
   }
@@ -129,7 +124,6 @@ window.addEventListener("DOMContentLoaded", () => {
   }
 
   setInterval(updateDisplay, 1000);
-  createDeviceBox(DEFAULT_DEVICE);
 
   const client = mqtt.connect(MQTT_URL, {
     username: MQTT_USER,
@@ -158,11 +152,8 @@ window.addEventListener("DOMContentLoaded", () => {
       for(const k in friendlyForDevice){
         const val = data[k];
         if(val != null && !isNaN(val)){
-          // Apply first value after a tiny delay to ensure gauge drawn
-          setTimeout(()=>{
-            gauges[`${devTopic}_${k}`].animationDuration = 0; // instant first value
-            gauges[`${devTopic}_${k}`].value = val;
-          }, 60);
+          gauges[`${devTopic}_${k}`].animationDuration = 0; // instant first value
+          gauges[`${devTopic}_${k}`].value = val;
         }
       }
 
@@ -171,6 +162,9 @@ window.addEventListener("DOMContentLoaded", () => {
       console.error("Bad JSON", e, msg.toString());
     }
   });
+
+  // Initialize default device box
+  createDeviceBox("Troy-ESP-01");
 
 });
 </script>
