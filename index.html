@@ -19,13 +19,9 @@ body { font-family: Arial, sans-serif; padding:15px; background:#f4f4f4; }
 
 <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 <script>
-// Devices you want to show
-const DEVICES = ["Troy-ESP-01", "Troy-ESP-02"]; // add as needed
-
-// Friendly sensor names (a,b,c,d)
+// Friendly sensor names for all devices (a,b,c,d)
 const FRIENDLY = {
-  "Troy-ESP-01": { a:"Boiler", b:"Return", c:"Ambient", d:"Tank" },
-  "Troy-ESP-02": { a:"Hot", b:"Cold" }
+  a:"Boiler", b:"Return", c:"Ambient", d:"Tank"
 };
 
 const MQTT_URL = "wss://e6a8e480573c4e6f9923fb4cbca3ea53.s1.eu.hivemq.cloud:8884/mqtt";
@@ -35,9 +31,9 @@ const MQTT_PASS = "4pp8X6T+jvK36;3EQSk";
 let lastSeen = {};
 let readings = {};
 
-function buildUI(){
-  const c = document.getElementById("container");
-  DEVICES.forEach(dev=>{
+function ensureDevice(dev){
+  if(!document.getElementById(`wrap_${dev}`)){
+    const c = document.getElementById("container");
     const wrap = document.createElement("div");
     wrap.id = `wrap_${dev}`;
     wrap.className = "device";
@@ -49,49 +45,48 @@ function buildUI(){
     c.appendChild(wrap);
     lastSeen[dev] = 0;
     readings[dev] = {};
-  });
+  }
 }
 
 function updateDisplay(){
   const now = Math.floor(Date.now()/1000);
-  DEVICES.forEach(dev=>{
+  for(const dev in readings){
     const stale = (now - lastSeen[dev]) > 60;
     document.getElementById(`warn_${dev}`).style.display = stale ? "block" : "none";
 
     const cont = document.getElementById(`sens_${dev}`);
     cont.innerHTML = "";
     const res = readings[dev];
-    Object.keys(FRIENDLY[dev]).forEach(k=>{
-      const v = res[k]==null ? "--" : Math.round(res[k]);
+    for(const k in FRIENDLY){
+      const v = res[k]==null ? "--" : res[k].toFixed(1);
       const color = stale ? "#aaa" : "#000";
       cont.innerHTML += `<div class="sensor">
-          <span>${FRIENDLY[dev][k]}</span>
+          <span>${FRIENDLY[k]}</span>
           <span style="color:${color}">${v}°F</span>
       </div>`;
-    });
-  });
+    }
+  }
 }
 
 // Connect MQTT
-buildUI();
 setInterval(updateDisplay, 1000);
 
 const client = mqtt.connect(MQTT_URL,{
-  username:MQTT_USER,
-  password:MQTT_PASS,
-  clean:true
+  username: MQTT_USER,
+  password: MQTT_PASS,
+  clean: true
 });
 
 client.on("connect", ()=>{
   console.log("MQTT Connected");
-  client.subscribe("home/temps/troy/#");
+  client.subscribe("Troy/Boiler/#");  // match your ESP topic
 });
 
 client.on("message",(topic,msg)=>{
   try{
     const data = JSON.parse(msg.toString());
-    const devTopic = topic.split("/").pop();   // Troy-ESP-01
-    if(!DEVICES.includes(devTopic)) return;
+    const devTopic = topic.split("/").pop(); // e.g., Troy-ESP-01
+    ensureDevice(devTopic);
 
     readings[devTopic] = data;
     lastSeen[devTopic] = data.ep;
