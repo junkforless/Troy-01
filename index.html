@@ -11,6 +11,7 @@ body { font-family: Arial, sans-serif; padding:15px; background:#f4f4f4; }
 .sensor { background:#fff; padding:12px; border-radius:10px; margin-bottom:10px;
          box-shadow:0 2px 5px rgba(0,0,0,0.2); display:flex; justify-content:space-between; }
 .warn { color:red; text-align:center; font-weight:bold; margin-bottom:6px; display:none; }
+.timestamp { font-size:12px; text-align:center; color:#555; margin-top:4px; }
 </style>
 </head>
 <body>
@@ -19,79 +20,97 @@ body { font-family: Arial, sans-serif; padding:15px; background:#f4f4f4; }
 
 <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 <script>
-// Friendly sensor names for all devices (a,b,c,d)
-const FRIENDLY = {
-  a:"Boiler", b:"Return", c:"Ambient", d:"Tank"
-};
+window.addEventListener("DOMContentLoaded", () => {
 
-const MQTT_URL = "wss://e6a8e480573c4e6f9923fb4cbca3ea53.s1.eu.hivemq.cloud:8884/mqtt";
-const MQTT_USER = "troy-esp";
-const MQTT_PASS = "4pp8X6T+jvK36;3EQSk";
+  const FRIENDLY = { a:"Boiler", b:"Return", c:"Ambient", d:"Tank" };
 
-let lastSeen = {};
-let readings = {};
+  const MQTT_URL = "wss://e6a8e480573c4e6f9923fb4cbca3ea53.s1.eu.hivemq.cloud:8884/mqtt";
+  const MQTT_USER = "troy-esp";
+  const MQTT_PASS = "4pp8X6T+jvK36;3EQSk";
 
-function ensureDevice(dev){
-  if(!document.getElementById(`wrap_${dev}`)){
-    const c = document.getElementById("container");
-    const wrap = document.createElement("div");
-    wrap.id = `wrap_${dev}`;
-    wrap.className = "device";
-    wrap.innerHTML = `
-      <div class="dev-header">${dev}</div>
-      <div id="warn_${dev}" class="warn">⚠ STALE DATA</div>
-      <div id="sens_${dev}"></div>
-    `;
-    c.appendChild(wrap);
-    lastSeen[dev] = 0;
-    readings[dev] = {};
-  }
-}
+  let lastSeen = {};
+  let readings = {};
 
-function updateDisplay(){
-  const now = Math.floor(Date.now()/1000);
-  for(const dev in readings){
-    const stale = (now - lastSeen[dev]) > 60;
-    document.getElementById(`warn_${dev}`).style.display = stale ? "block" : "none";
-
-    const cont = document.getElementById(`sens_${dev}`);
-    cont.innerHTML = "";
-    const res = readings[dev];
-    for(const k in FRIENDLY){
-      const v = res[k]==null ? "--" : res[k].toFixed(1);
-      const color = stale ? "#aaa" : "#000";
-      cont.innerHTML += `<div class="sensor">
-          <span>${FRIENDLY[k]}</span>
-          <span style="color:${color}">${v}°F</span>
-      </div>`;
+  // Ensure a device div exists
+  function ensureDevice(dev){
+    if(!document.getElementById(`wrap_${dev}`)){
+      const c = document.getElementById("container");
+      const wrap = document.createElement("div");
+      wrap.id = `wrap_${dev}`;
+      wrap.className = "device";
+      wrap.innerHTML = `
+        <div class="dev-header">${dev}</div>
+        <div id="warn_${dev}" class="warn">⚠ STALE DATA</div>
+        <div id="sens_${dev}"></div>
+        <div id="ts_${dev}" class="timestamp"></div>
+      `;
+      c.appendChild(wrap);
+      lastSeen[dev] = 0;
+      readings[dev] = {};
     }
   }
-}
 
-// Connect MQTT
-setInterval(updateDisplay, 1000);
+  function updateDisplay(){
+    const now = Math.floor(Date.now()/1000);
+    for(const dev in readings){
+      const stale = (now - lastSeen[dev]) > 60;
+      document.getElementById(`warn_${dev}`).style.display = stale ? "block" : "none";
 
-const client = mqtt.connect(MQTT_URL,{
-  username: MQTT_USER,
-  password: MQTT_PASS,
-  clean: true
-});
+      const cont = document.getElementById(`sens_${dev}`);
+      cont.innerHTML = "";
+      const res = readings[dev];
+      for(const k in FRIENDLY){
+        const val = res[k];
+        const v = (val != null && !isNaN(val)) ? Number(val).toFixed(1) : "--";
+        const color = stale ? "#aaa" : "#000";
+        cont.innerHTML += `<div class="sensor">
+            <span>${FRIENDLY[k]}</span>
+            <span style="color:${color}">${v}°F</span>
+        </div>`;
+      }
 
-client.on("connect", ()=>{
-  console.log("MQTT Connected");
-  client.subscribe("Troy/Boiler/#");  // match your ESP topic
-});
+      const tsDiv = document.getElementById(`ts_${dev}`);
+      tsDiv.innerText = `Last update: ${res.ep ? new Date(res.ep*1000).toLocaleTimeString() : "--:--:--"}`;
+    }
+  }
 
-client.on("message",(topic,msg)=>{
-  try{
-    const data = JSON.parse(msg.toString());
-    const devTopic = topic.split("/").pop(); // e.g., Troy-ESP-01
-    ensureDevice(devTopic);
+  setInterval(updateDisplay, 1000);
 
-    readings[devTopic] = data;
-    lastSeen[devTopic] = data.ep;
-    updateDisplay();
-  }catch(e){ console.error("Bad JSON", e); }
+  // Connect MQTT
+  const client = mqtt.connect(MQTT_URL,{
+    username: MQTT_USER,
+    password: MQTT_PASS,
+    clean: true
+  });
+
+  client.on("connect", ()=>{
+    console.log("MQTT Connected");
+    client.subscribe("Troy/Boiler/#");
+  });
+
+  client.on("reconnect", ()=>{
+    console.log("MQTT Reconnecting...");
+  });
+
+  client.on("error", (err)=>{
+    console.error("MQTT Error:", err);
+  });
+
+  client.on("message",(topic,msg)=>{
+    try{
+      const data = JSON.parse(msg.toString());
+      const devTopic = topic.split("/").pop(); // e.g., Troy-ESP-01
+      ensureDevice(devTopic);
+
+      readings[devTopic] = data;
+      lastSeen[devTopic] = data.ep;
+      console.log("Received from", devTopic, data);
+      updateDisplay();
+    }catch(e){
+      console.error("Bad JSON", e, msg.toString());
+    }
+  });
+
 });
 </script>
 </body>
