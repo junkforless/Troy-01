@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Troy MQTT Dashboard 2.0</title>
+<style>
+body { font-family: Arial, sans-serif; padding:15px; background:#f4f4f4; }
+.device { margin-bottom:40px; }
+.dev-header { font-size:26px; margin-bottom:4px; font-weight:bold; text-align:center; }
+.timestamp { font-size:14px; text-align:center; color:#555; margin-bottom:10px; }
+.sensor-container { display:flex; flex-wrap:wrap; justify-content:center; gap:20px; }
+.sensor { text-align:center; }
+.sensor-label { font-size:24px; font-weight:bold; margin-top:8px; }
+.warn { color:red; text-align:center; font-weight:bold; margin-bottom:6px; display:none; }
+canvas { max-width:150px; }
+</style>
+</head>
+<body>
+
+<div id="container"></div>
+
+<!-- Canvas Gauges Library -->
+<script src="https://cdn.jsdelivr.net/npm/canvas-gauges@2.1.7/gauge.min.js"></script>
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<script>
+window.addEventListener("DOMContentLoaded", () => {
+
+  // Friendly names per device
+  const FRIENDLY = {
+    "Troy-ESP-01": { a:"Boiler", b:"Return", c:"Ambient", d:"Tank" },
+    "Troy-ESP-02": { a:"Hot", b:"Cold" }  // only two sensors
+  };
+
+  const MQTT_URL  = "wss://81367823bf3f495e897a93f0d0bff0ee.s1.eu.hivemq.cloud:8884/mqtt";
+  const MQTT_USER = "troy-esp-read-only";
+  const MQTT_PASS = "4wH8s121f2mV4wH8s";
+
+  let lastSeen = {};
+  let readings = {};
+  let gauges = {};
+
+  const DEFAULT_DEVICE = "Troy-ESP-01";
+
+  function createDeviceBox(dev){
+    const c = document.getElementById("container");
+    if(!document.getElementById(`wrap_${dev}`)){
+      const wrap = document.createElement("div");
+      wrap.id = `wrap_${dev}`;
+      wrap.className = "device";
+
+      // Build gauges for each sensor
+      let sensorsHTML = `<div class="sensor-container">`;
+      const friendlyForDevice = FRIENDLY[dev] || {};
+      for(const k in friendlyForDevice){
+        sensorsHTML += `
+          <div class="sensor">
+            <canvas id="gauge_${dev}_${k}"></canvas>
+            <div class="sensor-label">${friendlyForDevice[k]}</div>
+          </div>`;
+      }
+      sensorsHTML += `</div>`;
+
+      wrap.innerHTML = `
+        <div class="dev-header">${dev}</div>
+        <div id="ts_${dev}" class="timestamp">Waiting for data...</div>
+        <div id="warn_${dev}" class="warn">⚠ STALE DATA</div>
+        ${sensorsHTML}
+      `;
+
+      c.appendChild(wrap);
+      lastSeen[dev] = 0;
+      readings[dev] = {};
+
+      // Initialize gauges
+      for(const k in friendlyForDevice){
+        gauges[`${dev}_${k}`] = new RadialGauge({
+          renderTo: `gauge_${dev}_${k}`,
+          width: 150,
+          height: 150,
+          units: "°F",
+          minValue: 0,
+          maxValue: 250,
+          majorTicks: ["0","50","100","150","200","250"],
+          minorTicks: 5,
+          highlights: [
+            { from: 0, to: 150, color: "rgba(0,255,0,.3)" },
+            { from: 150, to: 200, color: "rgba(255,255,0,.3)" },
+            { from: 200, to: 250, color: "rgba(255,0,0,.3)" }
+          ],
+          strokeTicks: true,
+          borders: true,
+          needleType: "arrow",
+          needleWidth: 2,
+          animationDuration: 300,
+          animationRule: "linear",
+          value: 0
+        }).draw();
+      }
+    }
+  }
+
+  function updateDisplay(){
+    const now = Math.floor(Date.now()/1000);
+    for(const dev in readings){
+      const stale = (now - lastSeen[dev]) > 60;
+      document.getElementById(`warn_${dev}`).style.display = stale ? "block" : "none";
+
+      const res = readings[dev];
+      const friendlyForDevice = FRIENDLY[dev] || {};
+
+      // Update gauges
+      for(const k in friendlyForDevice){
+        const val = res[k];
+        if(val != null && !isNaN(val)){
+          gauges[`${dev}_${k}`].value = val;
+        }
+      }
+
+      // Update timestamp with "xx seconds ago"
+      const tsDiv = document.getElementById(`ts_${dev}`);
+      if(res.ep){
+        const secondsAgo = Math.floor(Date.now()/1000 - res.ep);
+        tsDiv.innerText = `Last update: ${new Date(res.ep*1000).toLocaleTimeString()} (${secondsAgo}s ago)`;
+      } else {
+        tsDiv.innerText = "Waiting for data...";
+      }
+    }
+  }
+
+  setInterval(updateDisplay, 1000);
+  createDeviceBox(DEFAULT_DEVICE);
+
+  const client = mqtt.connect(MQTT_URL, {
+    username: MQTT_USER,
+    password: MQTT_PASS,
+    clean: true
+  });
+
+  client.on("connect", ()=>{
+    console.log("MQTT Connected");
+    client.subscribe("Troy/Boiler/#");
+  });
+
+  client.on("reconnect", ()=> console.log("MQTT Reconnecting..."));
+  client.on("error", (err)=> console.error("MQTT Error:", err));
+
+  client.on("message",(topic,msg)=>{
+    try{
+      const data = JSON.parse(msg.toString());
+      const devTopic = topic.split("/").pop();
+      createDeviceBox(devTopic);
+
+      readings[devTopic] = data;
+      lastSeen[devTopic] = data.ep;
+      updateDisplay();
+    }catch(e){
+      console.error("Bad JSON", e, msg.toString());
+    }
+  });
+
+});
+</script>
+</body>
+</html>
