@@ -60,7 +60,7 @@ window.addEventListener("DOMContentLoaded", () => {
   function updateDisplay(){
     const now = Math.floor(Date.now()/1000);
     for(const dev in readings){
-      const stale = (now - lastSeen[dev]) > 60;
+      const stale = (now - lastSeen[dev]) > 20;
       document.getElementById(`warn_${dev}`).style.display = stale ? "block" : "none";
 
       const cont = document.getElementById(`sens_${dev}`);
