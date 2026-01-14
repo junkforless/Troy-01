@@ -73,10 +73,13 @@ window.addEventListener("DOMContentLoaded", () => {
         if(friendlyForDevice[k]){
           const val = res[k];
           const v = (val != null && !isNaN(val)) ? Number(val).toFixed(1) : "--";
+          
           const color = stale ? "#aaa" : "#000";
+          const deco  = stale ? "line-through" : "none";
+
           cont.innerHTML += `<div class="sensor">
               <span>${friendlyForDevice[k]}</span>
-              <span style="color:${color}">${v}°F</span>
+              <span style="color:${color}; text-decoration:${deco}">${v}°F</span>
           </div>`;
         }
       }
