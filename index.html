@@ -81,11 +81,12 @@ window.addEventListener("DOMContentLoaded", () => {
         }
       }
 
-      // Update timestamp with "xx seconds ago"
+      // Update timestamp with date + time + seconds ago
       const tsDiv = document.getElementById(`ts_${dev}`);
       if(res.ep){
         const secondsAgo = Math.floor(Date.now()/1000 - res.ep);
-        tsDiv.innerText = `Last update: ${new Date(res.ep*1000).toLocaleTimeString()} (${secondsAgo}s ago)`;
+        const dt = new Date(res.ep * 1000);
+        tsDiv.innerText = `Last Updated: ${dt.toLocaleDateString()} ${dt.toLocaleTimeString()} (${secondsAgo}s ago)`;
       } else {
         tsDiv.innerText = "Waiting for data...";
       }
