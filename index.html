@@ -108,7 +108,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
   client.on("connect", ()=>{
     console.log("MQTT Connected");
-    client.subscribe("Troy/Boiler/#");
+    client.subscribe("Troy/Boiler1/#");
   });
 
   client.on("reconnect", ()=>{
