@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Troy MQTT Dashboard</title>
+
+<style>
+body {
+  font-family: Arial, sans-serif;
+  padding:15px;
+  background:#f4f4f4;
+}
+.device { margin-bottom:25px; }
+.dev-header {
+  font-size:26px;
+  margin-bottom:4px;
+  font-weight:bold;
+  text-align:center;
+}
+.timestamp {
+  font-size:14px;
+  text-align:center;
+  color:#555;
+  margin-bottom:6px;
+}
+.sensor {
+  background:#fff;
+  padding:12px;
+  border-radius:10px;
+  margin-bottom:10px;
+  box-shadow:0 2px 5px rgba(0,0,0,0.2);
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+}
+.sensor span:first-child {
+  font-size:24px;
+  font-weight:bold;
+}
+.sensor span:last-child {
+  font-weight:bold;
+  font-size:36px;
+}
+.warn {
+  color:red;
+  text-align:center;
+  font-weight:bold;
+  margin-bottom:6px;
+  display:none;
+}
+</style>
+</head>
+
+<body>
+<div id="container"></div>
+
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<script>
+window.addEventListener("DOMContentLoaded", () => {
+
+  /* ================= CONFIG ================= */
+
+  // ONLY devices allowed to appear
+  const ALLOWED_DEVICES = ["Troy-ESP-01", "Troy-ESP-02"];
+
+  // Friendly sensor names
+  const FRIENDLY = {
+    "Troy-ESP-01": { a:"A-Boiler", b:"B-Return", c:"C-Ambient", d:"D-Tank" },
+    "Troy-ESP-02": { a:"A-Hot", b:"B-Cold" }
+  };
+
+  const MQTT_URL  = "wss://81367823bf3f495e897a93f0d0bff0ee.s1.eu.hivemq.cloud:8884/mqtt";
+  const MQTT_USER = "troy-esp-read-only";
+  const MQTT_PASS = "4wH8s121f2mV4wH8s";
+
+  /* ============== STATE ================= */
+
+  let lastSeen = {};
+  let readings = {};
+
+  /* ============== UI ================= */
+
+  function createDeviceBox(dev){
+    if (!ALLOWED_DEVICES.includes(dev)) return;
+
+    const c = document.getElementById("container");
+    if(!document.getElementById(`wrap_${dev}`)){
+      const wrap = document.createElement("div");
+      wrap.id = `wrap_${dev}`;
+      wrap.className = "device";
+      wrap.innerHTML = `
+        <div class="dev-header">${dev}</div>
+        <div id="ts_${dev}" class="timestamp">Waiting for data...</div>
+        <div id="warn_${dev}" class="warn">⚠ STALE DATA</div>
+        <div id="sens_${dev}"></div>
+      `;
+      c.appendChild(wrap);
+      lastSeen[dev] = 0;
+      readings[dev] = {};
+    }
+  }
+
+  function updateDisplay(){
+    const now = Math.floor(Date.now()/1000);
+
+    for(const dev of ALLOWED_DEVICES){
+      if(!readings[dev]) continue;
+
+      const stale = (now - lastSeen[dev]) > 20;
+      document.getElementById(`warn_${dev}`).style.display = stale ? "block" : "none";
+
+      const cont = document.getElementById(`sens_${dev}`);
+      cont.innerHTML = "";
+
+      const res = readings[dev];
+      const map = FRIENDLY[dev] || {};
+
+      for(const k in res){
+        if(map[k]){
+          const val = res[k];
+          const v = (val != null && !isNaN(val)) ? Number(val).toFixed(1) : "--";
+          const color = stale ? "#aaa" : "#000";
+          const deco  = stale ? "line-through" : "none";
+
+          cont.innerHTML += `
+            <div class="sensor">
+              <span>${map[k]}</span>
+              <span style="color:${color}; text-decoration:${deco}">
+                ${v}°F
+              </span
