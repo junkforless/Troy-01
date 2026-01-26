@@ -36,7 +36,7 @@ window.addEventListener("DOMContentLoaded", () => {
   let lastSeen = {};
   let readings = {};
 
-  const DEFAULT_DEVICE = "Troy-ESP-01";
+  const DEFAULT_DEVICE = "Troy-ESP-03";
 
   function createDeviceBox(dev){
     const c = document.getElementById("container");
@@ -107,7 +107,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
   client.on("connect", ()=>{
     console.log("MQTT Connected");
-    client.subscribe("Troy/Boiler/#");
+    client.subscribe("Troy/Boiler2/#");
   });
 
   client.on("reconnect", ()=>{
