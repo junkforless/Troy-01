@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Troy MQTT Dashboard</title>
+<style>
+body { font-family: Arial, sans-serif; padding:15px; background:#f4f4f4; }
+.device { margin-bottom:25px; }
+.dev-header { font-size:26px; margin-bottom:4px; font-weight:bold; text-align:center; }
+.timestamp { font-size:14px; text-align:center; color:#555; margin-bottom:6px; }
+.sensor { background:#fff; padding:12px; border-radius:10px; margin-bottom:10px;
+         box-shadow:0 2px 5px rgba(0,0,0,0.2); display:flex; justify-content:space-between; align-items:center; }
+.sensor span:first-child { font-size:24px; font-weight:bold; } /* label */
+.sensor span:last-child { font-weight:bold; font-size:36px; } /* temp */
+.warn { color:red; text-align:center; font-weight:bold; margin-bottom:6px; display:none; }
+</style>
+</head>
+<body>
+
+<div id="container"></div>
+
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<script>
+window.addEventListener("DOMContentLoaded", () => {
+
+  // Friendly names per device
+  const FRIENDLY = {
+    "Troy-ESP-03": { a:"A-Boiler", b:"B-Return", c:"C-Ambient", d:"D-Tank" },
+  };
+
+  const MQTT_URL  = "wss://81367823bf3f495e897a93f0d0bff0ee.s1.eu.hivemq.cloud:8884/mqtt";
+  const MQTT_USER = "troy-esp-read-only";
+  const MQTT_PASS = "4wH8s121f2mV4wH8s";
+
+  let lastSeen = {};
+  let readings = {};
+
+  const DEFAULT_DEVICE = "Troy-ESP-01";
+
+  function createDeviceBox(dev){
+    const c = document.getElementById("container");
+    if(!document.getElementById(`wrap_${dev}`)){
+      const wrap = document.createElement("div");
+      wrap.id = `wrap_${dev}`;
+      wrap.className = "device";
+      wrap.innerHTML = `
+        <div class="dev-header">${dev}</div>
+        <div id="ts_${dev}" class="timestamp">Waiting for data...</div>
+        <div id="warn_${dev}" class="warn">⚠ STALE DATA</div>
+        <div id="sens_${dev}"></div>
+      `;
+      c.appendChild(wrap);
+      lastSeen[dev] = 0;
+      readings[dev] = {};
+    }
+  }
+
+  function updateDisplay(){
+    const now = Math.floor(Date.now()/1000);
+    for(const dev in readings){
+      const stale = (now - lastSeen[dev]) > 20;
+      document.getElementById(`warn_${dev}`).style.display = stale ? "block" : "none";
+
+      const cont = document.getElementById(`sens_${dev}`);
+      cont.innerHTML = "";
+      const res = readings[dev];
+      const friendlyForDevice = FRIENDLY[dev] || {};
+
+      // Only render keys that exist in both JSON and friendly mapping
+      for(const k in res){
+        if(friendlyForDevice[k]){
+          const val = res[k];
+          const v = (val != null && !isNaN(val)) ? Number(val).toFixed(1) : "--";
+          
+          const color = stale ? "#aaa" : "#000";
+          const deco  = stale ? "line-through" : "none";
+
+          cont.innerHTML += `<div class="sensor">
+              <span>${friendlyForDevice[k]}</span>
+              <span style="color:${color}; text-decoration:${deco}">${v}°F</span>
+          </div>`;
+        }
+      }
+
+      // Update timestamp with date + time + seconds ago
+      const tsDiv = document.getElementById(`ts_${dev}`);
+      if(res.ep){
+        const secondsAgo = Math.floor(Date.now()/1000 - res.ep);
+        const dt = new Date(res.ep * 1000);
+        tsDiv.innerText = `Last Updated: ${dt.toLocaleDateString()} ${dt.toLocaleTimeString()} (${secondsAgo}s ago)`;
+      } else {
+        tsDiv.innerText = "Waiting for data...";
+      }
+    }
+  }
+
+  setInterval(updateDisplay, 1000);
+
+  createDeviceBox(DEFAULT_DEVICE);
+
+  const client = mqtt.connect(MQTT_URL, {
+    username: MQTT_USER,
+    password: MQTT_PASS,
+    clean: true
+  });
+
+  client.on("connect", ()=>{
+    console.log("MQTT Connected");
+    client.subscribe("Troy/Boiler/#");
+  });
+
+  client.on("reconnect", ()=>{
+    console.log("MQTT Reconnecting...");
+  });
+
+  client.on("error", (err)=>{
+    console.error("MQTT Error:", err);
+  });
+
+  client.on("message",(topic,msg)=>{
+    try{
+      const data = JSON.parse(msg.toString());
+      const devTopic = topic.split("/").pop();
+      createDeviceBox(devTopic);
+
+      readings[devTopic] = data;
+      lastSeen[devTopic] = data.ep;
+      updateDisplay();
+    }catch(e){
+      console.error("Bad JSON", e, msg.toString());
+    }
+  });
+
+});
+</script>
+</body>
+</html>
